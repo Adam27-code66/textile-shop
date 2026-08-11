@@ -3,6 +3,12 @@ import { createServerSupabaseClient } from '@/lib/supabase-server';
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
+  const forwardedHost = request.headers.get('x-forwarded-host');
+  const isLocalEnv = process.env.NODE_ENV === 'development';
+  const currentOrigin = isLocalEnv
+    ? origin
+    : (forwardedHost ? `https://${forwardedHost}` : origin);
+
   const code = searchParams.get('code');
   const error = searchParams.get('error');
   const errorDescription = searchParams.get('error_description');
@@ -15,7 +21,7 @@ export async function GET(request: NextRequest) {
       error,
       errorDescription,
     });
-    const loginUrl = new URL('/login', origin);
+    const loginUrl = new URL('/login', currentOrigin);
     loginUrl.searchParams.set('error', errorText);
     return NextResponse.redirect(loginUrl);
   }
@@ -31,7 +37,7 @@ export async function GET(request: NextRequest) {
         code: (exchangeError as any).code || exchangeError.name,
         status: (exchangeError as any).status || (exchangeError as any).statusCode,
       });
-      const loginUrl = new URL('/login', origin);
+      const loginUrl = new URL('/login', currentOrigin);
       loginUrl.searchParams.set('error', exchangeError.message || 'Failed to exchange authorization code.');
       return NextResponse.redirect(loginUrl);
     }
@@ -72,7 +78,7 @@ export async function GET(request: NextRequest) {
 
       // Redirect to / (or /admin/dashboard if ADMIN) after successful login
       const targetPath = role === 'ADMIN' ? '/admin/dashboard' : next;
-      const response = NextResponse.redirect(new URL(targetPath, origin));
+      const response = NextResponse.redirect(new URL(targetPath, currentOrigin));
 
       // Save role cookie for middleware protection
       response.cookies.set('area51_user_role', role, {
@@ -86,7 +92,7 @@ export async function GET(request: NextRequest) {
   }
 
   // If no code and no OAuth error parameter provided
-  const loginUrl = new URL('/login', origin);
+  const loginUrl = new URL('/login', currentOrigin);
   loginUrl.searchParams.set('error', 'No authentication code provided.');
   return NextResponse.redirect(loginUrl);
 }
