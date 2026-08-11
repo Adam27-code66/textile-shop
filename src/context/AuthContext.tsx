@@ -150,11 +150,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Google OAuth Sign In
   const signInWithGoogle = async (): Promise<{ success: boolean; error?: string }> => {
     try {
-      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
+      const origin = typeof window !== 'undefined' ? window.location.origin : (process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000');
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${siteUrl}/auth/callback`,
+          redirectTo: `${origin}/auth/callback`,
         },
       });
 
@@ -162,7 +162,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { success: false, error: error.message };
       }
 
-      // The browser will redirect to Google — no further action needed here
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message || 'Google sign-in failed.' };
