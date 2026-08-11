@@ -42,9 +42,8 @@ export async function GET() {
       }));
     }
 
-    // Merge Supabase items with in-memory dynamicProductsStore (Supabase taking priority)
+    // Merge Supabase items with in-memory store
     const mergedMap = new Map<string, Product>();
-
     dynamicProductsStore.forEach((p) => mergedMap.set(p.id, p));
     supabaseList.forEach((p) => mergedMap.set(p.id, p));
 
@@ -125,7 +124,7 @@ export async function POST(request: NextRequest) {
     // 1. Immediately update in-memory dynamic store
     addOrUpdateDynamicProduct(formattedProduct);
 
-    // 2. Insert into Supabase DB
+    // 2. Safely attempt Supabase insert with standard columns
     const dbPayload = {
       id: productId,
       name,
@@ -139,14 +138,12 @@ export async function POST(request: NextRequest) {
       is_featured: Boolean(isFeatured),
       is_new_arrival: Boolean(isNewArrival),
       material: material || '100% Premium Cotton',
-      care_instructions: careInstructions,
-      stock_status: stockStatus,
-      updated_at: new Date().toISOString()
+      care_instructions: careInstructions
     };
 
     const { error: dbError } = await supabase.from('products').upsert([dbPayload]);
     if (dbError) {
-      console.warn('Supabase DB Notice (Using in-memory sync):', dbError.message);
+      console.warn('Supabase DB insertion notice:', dbError.message);
     }
 
     return NextResponse.json(

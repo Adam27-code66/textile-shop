@@ -104,10 +104,10 @@ export async function PUT(
       stockStatus
     };
 
-    // 1. Update in-memory dynamic store
+    // 1. Update in-memory store
     addOrUpdateDynamicProduct(formattedUpdated);
 
-    // 2. Update Supabase DB
+    // 2. Update Supabase DB with standard columns
     const dbPayload = {
       id,
       name: formattedUpdated.name,
@@ -121,9 +121,7 @@ export async function PUT(
       is_featured: formattedUpdated.isFeatured,
       is_new_arrival: formattedUpdated.isNewArrival,
       material: formattedUpdated.material || '100% Premium Cotton',
-      care_instructions: formattedUpdated.careInstructions,
-      stock_status: formattedUpdated.stockStatus,
-      updated_at: new Date().toISOString()
+      care_instructions: formattedUpdated.careInstructions
     };
 
     const { error: dbError } = await supabase
@@ -132,7 +130,7 @@ export async function PUT(
       .eq('id', id);
 
     if (dbError) {
-      console.warn('Supabase DB Update Notice:', dbError.message);
+      console.warn('Supabase DB Update notice:', dbError.message);
     }
 
     return NextResponse.json(
@@ -166,17 +164,15 @@ export async function DELETE(
   }
 
   try {
-    // 1. Delete from in-memory dynamic store
     deleteDynamicProduct(id);
 
-    // 2. Delete from Supabase DB
     const { error: dbError } = await supabase
       .from('products')
       .delete()
       .eq('id', id);
 
     if (dbError) {
-      console.warn('Supabase DB Delete Notice:', dbError.message);
+      console.warn('Supabase DB Delete notice:', dbError.message);
     }
 
     return NextResponse.json(
