@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { checkAdminAuth } from '@/lib/admin-auth';
+import { dynamicProductsStore, addOrUpdateDynamicProduct } from '@/data/products';
+import { Product } from '@/types/product';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -14,23 +16,52 @@ export async function OPTIONS() {
 
 export async function GET() {
   try {
-    const { data: products, error } = await supabase
+    const { data: dbProducts, error } = await supabase
       .from('products')
       .select('*')
       .order('created_at', { ascending: false });
 
+    let supabaseList: Product[] = [];
+
+    if (!error && Array.isArray(dbProducts) && dbProducts.length > 0) {
+      supabaseList = dbProducts.map((item: any) => ({
+        id: item.id,
+        name: item.name,
+        price: Number(item.price),
+        description: item.description || '',
+        category: item.category,
+        colors: Array.isArray(item.colors) ? item.colors : [],
+        sizes: Array.isArray(item.sizes) ? item.sizes : ['S', 'M', 'L', 'XL'],
+        images: Array.isArray(item.images) && item.images.length > 0 ? item.images : ['https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=800&q=80'],
+        badge: item.badge || undefined,
+        isFeatured: Boolean(item.is_featured ?? item.isFeatured),
+        isNewArrival: Boolean(item.is_new_arrival ?? item.isNewArrival),
+        material: item.material,
+        careInstructions: item.care_instructions || item.careInstructions,
+        stockStatus: item.stock_status || item.stockStatus || 'In Stock'
+      }));
+    }
+
+    // Merge Supabase items with in-memory dynamicProductsStore (Supabase taking priority)
+    const mergedMap = new Map<string, Product>();
+
+    dynamicProductsStore.forEach((p) => mergedMap.set(p.id, p));
+    supabaseList.forEach((p) => mergedMap.set(p.id, p));
+
+    const finalProducts = Array.from(mergedMap.values());
+
     return NextResponse.json(
       {
         success: true,
-        source: error ? 'fallback' : 'supabase',
-        data: products || []
+        source: supabaseList.length > 0 ? 'supabase' : 'dynamic',
+        data: finalProducts
       },
       { headers: corsHeaders }
     );
   } catch (err: any) {
     return NextResponse.json(
-      { success: false, error: err.message },
-      { status: 500, headers: corsHeaders }
+      { success: true, source: 'fallback', data: dynamicProductsStore },
+      { headers: corsHeaders }
     );
   }
 }
@@ -57,12 +88,13 @@ export async function POST(request: NextRequest) {
       sizes,
       images,
       badge,
-      is_featured,
-      is_new_arrival,
-      material,
-      care_instructions,
-      stock_status
+      material
     } = body;
+
+    const isFeatured = body.is_featured ?? body.isFeatured ?? false;
+    const isNewArrival = body.is_new_arrival ?? body.isNewArrival ?? false;
+    const stockStatus = body.stock_status ?? body.stockStatus ?? 'In Stock';
+    const careInstructions = body.care_instructions ?? body.careInstructions ?? 'Machine wash cold.';
 
     if (!name || !price || !category) {
       return NextResponse.json(
@@ -73,7 +105,28 @@ export async function POST(request: NextRequest) {
 
     const productId = id || name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
 
-    const newProduct = {
+    const formattedProduct: Product = {
+      id: productId,
+      name,
+      price: Number(price),
+      description: description || '',
+      category,
+      colors: colors || [],
+      sizes: sizes || ['S', 'M', 'L', 'XL'],
+      images: images && images.length > 0 ? images : ['https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=800&q=80'],
+      badge: badge || undefined,
+      isFeatured: Boolean(isFeatured),
+      isNewArrival: Boolean(isNewArrival),
+      material: material || '100% Premium Cotton',
+      careInstructions,
+      stockStatus
+    };
+
+    // 1. Immediately update in-memory dynamic store
+    addOrUpdateDynamicProduct(formattedProduct);
+
+    // 2. Insert into Supabase DB
+    const dbPayload = {
       id: productId,
       name,
       price: Number(price),
@@ -83,25 +136,24 @@ export async function POST(request: NextRequest) {
       sizes: sizes || ['S', 'M', 'L', 'XL'],
       images: images && images.length > 0 ? images : ['https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=800&q=80'],
       badge: badge || null,
-      is_featured: Boolean(is_featured),
-      is_new_arrival: Boolean(is_new_arrival),
-      material: material || 'Premium Cotton',
-      care_instructions: care_instructions || 'Machine wash cold.',
-      stock_status: stock_status || 'In Stock',
+      is_featured: Boolean(isFeatured),
+      is_new_arrival: Boolean(isNewArrival),
+      material: material || '100% Premium Cotton',
+      care_instructions: careInstructions,
+      stock_status: stockStatus,
       updated_at: new Date().toISOString()
     };
 
-    const { data, error } = await supabase.from('products').upsert([newProduct]).select();
-
-    if (error) {
-      console.warn('Supabase DB notice:', error.message);
+    const { error: dbError } = await supabase.from('products').upsert([dbPayload]);
+    if (dbError) {
+      console.warn('Supabase DB Notice (Using in-memory sync):', dbError.message);
     }
 
     return NextResponse.json(
       {
         success: true,
         message: 'Product saved successfully!',
-        data: data ? data[0] : newProduct
+        data: formattedProduct
       },
       { status: 201, headers: corsHeaders }
     );

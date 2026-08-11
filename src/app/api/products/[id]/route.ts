@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { checkAdminAuth } from '@/lib/admin-auth';
+import { dynamicProductsStore, addOrUpdateDynamicProduct, deleteDynamicProduct } from '@/data/products';
+import { Product } from '@/types/product';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -18,20 +20,42 @@ export async function GET(
 ) {
   const { id } = await params;
   try {
-    const { data: product, error } = await supabase
+    const existingMemory = dynamicProductsStore.find((p) => p.id === id);
+
+    const { data: dbProduct } = await supabase
       .from('products')
       .select('*')
       .eq('id', id)
       .single();
 
-    if (error || !product) {
-      return NextResponse.json(
-        { success: false, error: 'Product not found' },
-        { status: 404, headers: corsHeaders }
-      );
+    if (dbProduct) {
+      const formatted: Product = {
+        id: dbProduct.id,
+        name: dbProduct.name,
+        price: Number(dbProduct.price),
+        description: dbProduct.description || '',
+        category: dbProduct.category,
+        colors: Array.isArray(dbProduct.colors) ? dbProduct.colors : [],
+        sizes: Array.isArray(dbProduct.sizes) ? dbProduct.sizes : ['S', 'M', 'L', 'XL'],
+        images: Array.isArray(dbProduct.images) && dbProduct.images.length > 0 ? dbProduct.images : ['https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=800&q=80'],
+        badge: dbProduct.badge || undefined,
+        isFeatured: Boolean(dbProduct.is_featured ?? dbProduct.isFeatured),
+        isNewArrival: Boolean(dbProduct.is_new_arrival ?? dbProduct.isNewArrival),
+        material: dbProduct.material,
+        careInstructions: dbProduct.care_instructions || dbProduct.careInstructions,
+        stockStatus: dbProduct.stock_status || dbProduct.stockStatus || 'In Stock'
+      };
+      return NextResponse.json({ success: true, data: formatted }, { headers: corsHeaders });
     }
 
-    return NextResponse.json({ success: true, data: product }, { headers: corsHeaders });
+    if (existingMemory) {
+      return NextResponse.json({ success: true, data: existingMemory }, { headers: corsHeaders });
+    }
+
+    return NextResponse.json(
+      { success: false, error: 'Product not found' },
+      { status: 404, headers: corsHeaders }
+    );
   } catch (err: any) {
     return NextResponse.json(
       { success: false, error: err.message },
@@ -56,26 +80,66 @@ export async function PUT(
 
   try {
     const body = await request.json();
-    const updatePayload = {
-      ...body,
+    const existing = dynamicProductsStore.find((p) => p.id === id);
+
+    const isFeatured = body.is_featured ?? body.isFeatured ?? existing?.isFeatured ?? false;
+    const isNewArrival = body.is_new_arrival ?? body.isNewArrival ?? existing?.isNewArrival ?? false;
+    const stockStatus = body.stock_status ?? body.stockStatus ?? existing?.stockStatus ?? 'In Stock';
+    const careInstructions = body.care_instructions ?? body.careInstructions ?? existing?.careInstructions ?? '';
+
+    const formattedUpdated: Product = {
+      id,
+      name: body.name || existing?.name || 'Apparel Item',
+      price: Number(body.price || existing?.price || 999),
+      description: body.description ?? existing?.description ?? '',
+      category: body.category || existing?.category || 'Shirts',
+      colors: body.colors || existing?.colors || [],
+      sizes: body.sizes || existing?.sizes || ['S', 'M', 'L', 'XL'],
+      images: body.images || existing?.images || ['https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=800&q=80'],
+      badge: body.badge ?? existing?.badge,
+      isFeatured: Boolean(isFeatured),
+      isNewArrival: Boolean(isNewArrival),
+      material: body.material ?? existing?.material,
+      careInstructions,
+      stockStatus
+    };
+
+    // 1. Update in-memory dynamic store
+    addOrUpdateDynamicProduct(formattedUpdated);
+
+    // 2. Update Supabase DB
+    const dbPayload = {
+      id,
+      name: formattedUpdated.name,
+      price: formattedUpdated.price,
+      description: formattedUpdated.description,
+      category: formattedUpdated.category,
+      colors: formattedUpdated.colors,
+      sizes: formattedUpdated.sizes,
+      images: formattedUpdated.images,
+      badge: formattedUpdated.badge || null,
+      is_featured: formattedUpdated.isFeatured,
+      is_new_arrival: formattedUpdated.isNewArrival,
+      material: formattedUpdated.material || '100% Premium Cotton',
+      care_instructions: formattedUpdated.careInstructions,
+      stock_status: formattedUpdated.stockStatus,
       updated_at: new Date().toISOString()
     };
 
-    const { data, error } = await supabase
+    const { error: dbError } = await supabase
       .from('products')
-      .update(updatePayload)
-      .eq('id', id)
-      .select();
+      .update(dbPayload)
+      .eq('id', id);
 
-    if (error) {
-      console.warn('Supabase DB notice:', error.message);
+    if (dbError) {
+      console.warn('Supabase DB Update Notice:', dbError.message);
     }
 
     return NextResponse.json(
       {
         success: true,
         message: 'Product updated successfully!',
-        data: data ? data[0] : updatePayload
+        data: formattedUpdated
       },
       { headers: corsHeaders }
     );
@@ -102,13 +166,17 @@ export async function DELETE(
   }
 
   try {
-    const { error } = await supabase
+    // 1. Delete from in-memory dynamic store
+    deleteDynamicProduct(id);
+
+    // 2. Delete from Supabase DB
+    const { error: dbError } = await supabase
       .from('products')
       .delete()
       .eq('id', id);
 
-    if (error) {
-      console.warn('Supabase DB notice:', error.message);
+    if (dbError) {
+      console.warn('Supabase DB Delete Notice:', dbError.message);
     }
 
     return NextResponse.json(

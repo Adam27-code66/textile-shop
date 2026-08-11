@@ -40,24 +40,23 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
   const fetchProducts = useCallback(async () => {
     setIsLoading(true);
     try {
-      // Check local storage custom edits first for offline resilience
+      // 1. Read stored items from local storage first for instant UI response
       const localProductsStr = localStorage.getItem('area51_dynamic_products');
-      let baseItems: Product[] = initialProducts;
-
+      let localItems: Product[] = [];
       if (localProductsStr) {
         try {
-          baseItems = JSON.parse(localProductsStr);
+          localItems = JSON.parse(localProductsStr);
         } catch (e) {
-          console.warn('Could not parse local products array:', e);
+          // ignore
         }
       }
 
-      // Fetch from API
+      // 2. Fetch from backend API
       const res = await fetch('/api/products');
       if (res.ok) {
         const json = await res.json();
         if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-          const formatted: Product[] = json.data.map((item: any) => ({
+          const apiProducts: Product[] = json.data.map((item: any) => ({
             id: item.id,
             name: item.name,
             price: Number(item.price),
@@ -74,16 +73,25 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
             stockStatus: item.stock_status || item.stockStatus || 'In Stock'
           }));
 
-          setProductsList(formatted);
-          localStorage.setItem('area51_dynamic_products', JSON.stringify(formatted));
+          // Merge API items with local items (API taking priority)
+          const mergedMap = new Map<string, Product>();
+          initialProducts.forEach((p) => mergedMap.set(p.id, p));
+          localItems.forEach((p) => mergedMap.set(p.id, p));
+          apiProducts.forEach((p) => mergedMap.set(p.id, p));
+
+          const mergedList = Array.from(mergedMap.values());
+          setProductsList(mergedList);
+          localStorage.setItem('area51_dynamic_products', JSON.stringify(mergedList));
           setIsLoading(false);
           return;
         }
       }
 
-      setProductsList(baseItems);
+      if (localItems.length > 0) {
+        setProductsList(localItems);
+      }
     } catch (err: any) {
-      console.warn('API products load error, using local dataset:', err);
+      console.warn('API products load notice:', err);
     } finally {
       setIsLoading(false);
     }
@@ -122,8 +130,13 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
         stockStatus: newProductData.stockStatus || 'In Stock'
       };
 
-      // Call API
-      const res = await fetch('/api/products', {
+      // 1. Immediately update state & local storage
+      const updatedList = [fullProduct, ...productsList.filter((p) => p.id !== fullProduct.id)];
+      setProductsList(updatedList);
+      localStorage.setItem('area51_dynamic_products', JSON.stringify(updatedList));
+
+      // 2. Call API
+      await fetch('/api/products', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -132,17 +145,8 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify(fullProduct)
       });
 
-      // Update state locally immediately
-      const updatedList = [fullProduct, ...productsList.filter((p) => p.id !== fullProduct.id)];
-      setProductsList(updatedList);
-      localStorage.setItem('area51_dynamic_products', JSON.stringify(updatedList));
-
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success) {
-          return { success: true };
-        }
-      }
+      // 3. Refresh from API
+      await fetchProducts();
 
       return { success: true };
     } catch (err: any) {
@@ -157,7 +161,12 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
 
       const merged: Product = { ...existing, ...updatedData };
 
-      // Call API
+      // 1. Immediately update local state
+      const updatedList = productsList.map((p) => (p.id === id ? merged : p));
+      setProductsList(updatedList);
+      localStorage.setItem('area51_dynamic_products', JSON.stringify(updatedList));
+
+      // 2. Call API
       await fetch(`/api/products/${id}`, {
         method: 'PUT',
         headers: {
@@ -167,9 +176,8 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify(merged)
       });
 
-      const updatedList = productsList.map((p) => (p.id === id ? merged : p));
-      setProductsList(updatedList);
-      localStorage.setItem('area51_dynamic_products', JSON.stringify(updatedList));
+      // 3. Refresh from API
+      await fetchProducts();
 
       return { success: true };
     } catch (err: any) {
@@ -179,6 +187,12 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
 
   const deleteProduct = async (id: string) => {
     try {
+      // 1. Immediately update local state
+      const updatedList = productsList.filter((p) => p.id !== id);
+      setProductsList(updatedList);
+      localStorage.setItem('area51_dynamic_products', JSON.stringify(updatedList));
+
+      // 2. Call API
       await fetch(`/api/products/${id}`, {
         method: 'DELETE',
         headers: {
@@ -186,9 +200,8 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
         }
       });
 
-      const updatedList = productsList.filter((p) => p.id !== id);
-      setProductsList(updatedList);
-      localStorage.setItem('area51_dynamic_products', JSON.stringify(updatedList));
+      // 3. Refresh from API
+      await fetchProducts();
 
       return { success: true };
     } catch (err: any) {

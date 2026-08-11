@@ -391,3 +391,23 @@ export function sortProducts(items: Product[], sort: string): Product[] {
 export function formatPrice(price: number): string {
   return `₹${price.toLocaleString('en-IN')}`;
 }
+
+export let dynamicProductsStore: Product[] = [...products];
+
+export function setDynamicProducts(newProducts: Product[]) {
+  dynamicProductsStore = newProducts;
+}
+
+export function addOrUpdateDynamicProduct(item: Product) {
+  const index = dynamicProductsStore.findIndex((p) => p.id === item.id);
+  if (index >= 0) {
+    dynamicProductsStore[index] = item;
+  } else {
+    dynamicProductsStore.unshift(item);
+  }
+}
+
+export function deleteDynamicProduct(id: string) {
+  dynamicProductsStore = dynamicProductsStore.filter((p) => p.id !== id);
+}
+
