@@ -1,8 +1,9 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { UserProfile, UserRole } from '@/types/auth';
 import { supabase } from '@/lib/supabase';
+import type { User, AuthChangeEvent, Session } from '@supabase/supabase-js';
 
 interface LoginResult {
   success: boolean;
@@ -15,6 +16,7 @@ interface AuthContextType {
   role: UserRole | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<LoginResult>;
+  signInWithGoogle: () => Promise<{ success: boolean; error?: string }>;
   register: (fullName: string, email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   isAdmin: boolean;
@@ -22,197 +24,189 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const ADMIN_CREDENTIALS = [
-  { email: 'adamsamr1127@gamil.com', password: 'Adam@2710' },
-  { email: 'adamsamr11@2710', password: 'Adam@2710' },
-  { email: 'admin@area51.com', password: 'Adam@2710' }
-];
+function setRoleCookie(role: string) {
+  document.cookie = `area51_user_role=${role}; path=/; max-age=86400; SameSite=Lax`;
+}
+
+function clearRoleCookie() {
+  document.cookie = `area51_user_role=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+}
+
+async function fetchUserRole(userId: string): Promise<UserRole> {
+  try {
+    const { data } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .single();
+    return (data?.role as UserRole) || 'CUSTOMER';
+  } catch {
+    return 'CUSTOMER';
+  }
+}
+
+async function buildUserProfile(authUser: User): Promise<UserProfile> {
+  const role = await fetchUserRole(authUser.id);
+  return {
+    id: authUser.id,
+    email: authUser.email || '',
+    fullName:
+      authUser.user_metadata?.full_name ||
+      authUser.user_metadata?.name ||
+      authUser.email?.split('@')[0] ||
+      'User',
+    role,
+    createdAt: authUser.created_at || new Date().toISOString(),
+  };
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Initialize session from localStorage / Supabase
-  useEffect(() => {
-    async function initAuth() {
-      try {
-        const storedSession = localStorage.getItem('area51_user_session');
-        if (storedSession) {
-          const parsed = JSON.parse(storedSession);
-          setUser(parsed);
-        } else {
-          const { data } = await supabase.auth.getSession();
-          if (data?.session?.user) {
-            const authUser = data.session.user;
-            const cleanEmail = (authUser.email || '').toLowerCase();
-            const isAdminEmail = ADMIN_CREDENTIALS.some((c) => c.email.toLowerCase() === cleanEmail);
-
-            const { data: profile } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', authUser.id)
-              .single();
-
-            const role: UserRole = isAdminEmail ? 'ADMIN' : (profile?.role || 'CUSTOMER');
-            const userObj: UserProfile = {
-              id: authUser.id,
-              email: authUser.email || '',
-              fullName: profile?.full_name || (isAdminEmail ? 'Shop Admin' : authUser.email?.split('@')[0]),
-              role,
-              createdAt: profile?.created_at || new Date().toISOString()
-            };
-            setUser(userObj);
-            localStorage.setItem('area51_user_session', JSON.stringify(userObj));
-            document.cookie = `area51_user_role=${role}; path=/; max-age=86400`;
-          }
-        }
-      } catch (err) {
-        console.error('Error initializing auth session:', err);
-      } finally {
-        setIsLoading(false);
+  // Initialize: check for existing Supabase session
+  const initializeAuth = useCallback(async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const profile = await buildUserProfile(session.user);
+        setUser(profile);
+        setRoleCookie(profile.role);
+      } else {
+        setUser(null);
+        clearRoleCookie();
       }
+    } catch (err) {
+      console.error('Auth initialization error:', err);
+      setUser(null);
+      clearRoleCookie();
+    } finally {
+      setIsLoading(false);
     }
-
-    initAuth();
   }, []);
 
+  useEffect(() => {
+    initializeAuth();
+
+    // Listen for auth state changes (login, logout, token refresh, OAuth callback)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event: AuthChangeEvent, session: Session | null) => {
+        if (event === 'SIGNED_IN' && session?.user) {
+          const profile = await buildUserProfile(session.user);
+          setUser(profile);
+          setRoleCookie(profile.role);
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+          clearRoleCookie();
+        } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+          const profile = await buildUserProfile(session.user);
+          setUser(profile);
+          setRoleCookie(profile.role);
+        }
+      }
+    );
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [initializeAuth]);
+
+  // Email + Password Sign In
   const login = async (emailInput: string, passwordInput: string): Promise<LoginResult> => {
     setIsLoading(true);
     try {
       const cleanEmail = emailInput.trim().toLowerCase();
 
-      // Check if this particular email matches Admin credentials
-      const foundAdmin = ADMIN_CREDENTIALS.find(
-        (c) => c.email.toLowerCase() === cleanEmail && c.password === passwordInput
-      );
-
-      if (foundAdmin) {
-        const adminUser: UserProfile = {
-          id: 'admin-superuser-id',
-          email: foundAdmin.email,
-          fullName: 'Shop Admin',
-          role: 'ADMIN',
-          createdAt: new Date().toISOString()
-        };
-        setUser(adminUser);
-        localStorage.setItem('area51_user_session', JSON.stringify(adminUser));
-        document.cookie = `area51_user_role=ADMIN; path=/; max-age=86400`;
-        setIsLoading(false);
-        return { success: true, role: 'ADMIN' };
-      }
-
-      // If email is admin email but password is incorrect
-      if (ADMIN_CREDENTIALS.some((c) => c.email.toLowerCase() === cleanEmail)) {
-        setIsLoading(false);
-        return { success: false, error: 'Incorrect admin password.' };
-      }
-
-      // All remaining emails are treated as CUSTOMER
-      // Try Supabase Auth for Customer
       const { data, error } = await supabase.auth.signInWithPassword({
         email: cleanEmail,
         password: passwordInput,
       });
 
       if (error || !data.user) {
-        // Check local registered customers
-        const storedUsersStr = localStorage.getItem('area51_registered_users') || '[]';
-        const registeredUsers: any[] = JSON.parse(storedUsersStr);
-        const matched = registeredUsers.find(
-          (u) => u.email.toLowerCase() === cleanEmail && u.password === passwordInput
-        );
-
-        if (matched) {
-          const customerObj: UserProfile = {
-            id: matched.id,
-            email: matched.email,
-            fullName: matched.fullName,
-            role: 'CUSTOMER',
-            createdAt: matched.createdAt
-          };
-          setUser(customerObj);
-          localStorage.setItem('area51_user_session', JSON.stringify(customerObj));
-          document.cookie = `area51_user_role=CUSTOMER; path=/; max-age=86400`;
-          setIsLoading(false);
-          return { success: true, role: 'CUSTOMER' };
-        }
-
-        // Auto-create customer session for demo convenience if user credentials provided
-        const fallbackCustomer: UserProfile = {
-          id: `cust_${Date.now()}`,
-          email: cleanEmail,
-          fullName: cleanEmail.split('@')[0],
-          role: 'CUSTOMER',
-          createdAt: new Date().toISOString()
-        };
-        setUser(fallbackCustomer);
-        localStorage.setItem('area51_user_session', JSON.stringify(fallbackCustomer));
-        document.cookie = `area51_user_role=CUSTOMER; path=/; max-age=86400`;
         setIsLoading(false);
-        return { success: true, role: 'CUSTOMER' };
+        return { success: false, error: error?.message || 'Invalid email or password.' };
       }
 
-      const customerUser: UserProfile = {
-        id: data.user.id,
-        email: data.user.email || cleanEmail,
-        fullName: cleanEmail.split('@')[0],
-        role: 'CUSTOMER',
-        createdAt: new Date().toISOString()
-      };
+      const profile = await buildUserProfile(data.user);
 
-      setUser(customerUser);
-      localStorage.setItem('area51_user_session', JSON.stringify(customerUser));
-      document.cookie = `area51_user_role=CUSTOMER; path=/; max-age=86400`;
+      // Ensure profile exists in profiles table
+      await supabase.from('profiles').upsert([{
+        id: data.user.id,
+        email: cleanEmail,
+        full_name: profile.fullName,
+        role: profile.role,
+      }], { onConflict: 'id' });
+
+      setUser(profile);
+      setRoleCookie(profile.role);
       setIsLoading(false);
-      return { success: true, role: 'CUSTOMER' };
+      return { success: true, role: profile.role };
     } catch (err: any) {
       setIsLoading(false);
-      return { success: false, error: err.message || 'An unexpected error occurred during login.' };
+      return { success: false, error: err.message || 'An unexpected error occurred.' };
     }
   };
 
+  // Google OAuth Sign In
+  const signInWithGoogle = async (): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${siteUrl}/auth/callback`,
+        },
+      });
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
+      // The browser will redirect to Google — no further action needed here
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Google sign-in failed.' };
+    }
+  };
+
+  // Email + Password Sign Up
   const register = async (fullName: string, emailInput: string, passwordInput: string) => {
     setIsLoading(true);
     try {
       const cleanEmail = emailInput.trim().toLowerCase();
 
-      const storedUsersStr = localStorage.getItem('area51_registered_users') || '[]';
-      const registeredUsers: any[] = JSON.parse(storedUsersStr);
-
-      if (registeredUsers.some((u) => u.email.toLowerCase() === cleanEmail)) {
-        setIsLoading(false);
-        return { success: false, error: 'An account with this email already exists. Please sign in.' };
-      }
-
-      const { data } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email: cleanEmail,
         password: passwordInput,
         options: {
-          data: { full_name: fullName, role: 'CUSTOMER' }
-        }
+          data: { full_name: fullName },
+        },
       });
 
-      const newUserId = data?.user?.id || `user_${Date.now()}`;
-      const newUserObj: UserProfile = {
-        id: newUserId,
-        email: cleanEmail,
-        fullName,
-        role: 'CUSTOMER',
-        createdAt: new Date().toISOString()
-      };
-
-      registeredUsers.push({ ...newUserObj, password: passwordInput });
-      localStorage.setItem('area51_registered_users', JSON.stringify(registeredUsers));
-
-      if (data?.user) {
-        await supabase.from('profiles').insert([
-          { id: data.user.id, email: cleanEmail, full_name: fullName, role: 'CUSTOMER' }
-        ]);
+      if (error) {
+        setIsLoading(false);
+        return { success: false, error: error.message };
       }
 
-      setUser(newUserObj);
-      localStorage.setItem('area51_user_session', JSON.stringify(newUserObj));
-      document.cookie = `area51_user_role=CUSTOMER; path=/; max-age=86400`;
+      if (data?.user) {
+        // Create profile entry
+        await supabase.from('profiles').upsert([{
+          id: data.user.id,
+          email: cleanEmail,
+          full_name: fullName,
+          role: 'CUSTOMER',
+        }], { onConflict: 'id' });
+
+        const profile: UserProfile = {
+          id: data.user.id,
+          email: cleanEmail,
+          fullName,
+          role: 'CUSTOMER',
+          createdAt: new Date().toISOString(),
+        };
+        setUser(profile);
+        setRoleCookie('CUSTOMER');
+      }
 
       setIsLoading(false);
       return { success: true };
@@ -222,21 +216,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Logout
   const logout = async () => {
     try {
       await supabase.auth.signOut();
-    } catch (e) {
+    } catch {
       // ignore
     }
     setUser(null);
-    localStorage.removeItem('area51_user_session');
-    document.cookie = `area51_user_role=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+    clearRoleCookie();
   };
 
   const isAdmin = user?.role === 'ADMIN';
 
   return (
-    <AuthContext.Provider value={{ user, role: user?.role || null, isLoading, login, register, logout, isAdmin }}>
+    <AuthContext.Provider
+      value={{ user, role: user?.role || null, isLoading, login, signInWithGoogle, register, logout, isAdmin }}
+    >
       {children}
     </AuthContext.Provider>
   );

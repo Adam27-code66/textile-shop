@@ -17,12 +17,19 @@ ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow users to read their own profile" ON public.profiles
   FOR SELECT USING (auth.uid() = id);
 
+CREATE POLICY "Allow users to insert own profile" ON public.profiles
+  FOR INSERT WITH CHECK (auth.uid() = id);
+
+CREATE POLICY "Allow users to update own profile" ON public.profiles
+  FOR UPDATE USING (auth.uid() = id);
+
 CREATE POLICY "Allow admin full access to profiles" ON public.profiles
   FOR ALL USING (
     EXISTS (
       SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'ADMIN'
     )
   );
+
 
 -- 2. PRODUCTS TABLE
 CREATE TABLE IF NOT EXISTS public.products (
