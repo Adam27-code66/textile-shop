@@ -11,7 +11,10 @@ export async function GET(request: NextRequest) {
   // 1. Handle OAuth errors properly without showing "Missing auth code"
   if (error || errorDescription) {
     const errorText = errorDescription || error || 'Authentication failed.';
-    console.error('OAuth redirect error:', errorText);
+    console.error('[SUPABASE_OAUTH_REDIRECT_ERROR]', {
+      error,
+      errorDescription,
+    });
     const loginUrl = new URL('/login', origin);
     loginUrl.searchParams.set('error', errorText);
     return NextResponse.redirect(loginUrl);
@@ -23,7 +26,11 @@ export async function GET(request: NextRequest) {
     const { data: sessionData, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
     if (exchangeError) {
-      console.error('Code exchange error:', exchangeError.message);
+      console.error('[SUPABASE_OAUTH_EXCHANGE_ERROR]', {
+        message: exchangeError.message,
+        code: (exchangeError as any).code || exchangeError.name,
+        status: (exchangeError as any).status || (exchangeError as any).statusCode,
+      });
       const loginUrl = new URL('/login', origin);
       loginUrl.searchParams.set('error', exchangeError.message || 'Failed to exchange authorization code.');
       return NextResponse.redirect(loginUrl);
