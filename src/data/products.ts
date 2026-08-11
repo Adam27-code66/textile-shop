@@ -63,6 +63,27 @@ export const products: Product[] = [
     careInstructions: 'Machine wash cold. Iron on low heat.',
   },
   {
+    id: 'elevated-emerald-dress-shirt',
+    name: 'Elevated Emerald Floral Dress Shirt',
+    price: 2499,
+    description: 'Crafted from 100% long-staple cotton with a luxurious satin finish. Features an exclusive emerald floral print, tailored spread collar, and smooth button closure designed to elevate formal and smart-casual outfits.',
+    category: 'Shirts',
+    colors: [
+      { name: 'Emerald Teal', hex: '#0f766e' },
+      { name: 'Sand Beige', hex: '#d97706' },
+    ],
+    sizes: ['S', 'M', 'L', 'XL', 'XXL'],
+    images: [
+      'https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?w=800&q=80',
+      'https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=800&q=80',
+    ],
+    badge: 'Luxury',
+    isFeatured: true,
+    isNewArrival: true,
+    material: '100% Egyptian Cotton, Satin Finish',
+    careInstructions: 'Machine wash warm / Dry clean recommended. Warm iron.',
+  },
+  {
     id: 'archive-hoodie',
     name: 'Archive Hoodie',
     price: 2499,

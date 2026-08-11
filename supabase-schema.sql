@@ -1,4 +1,30 @@
--- Create Products Table in Supabase
+-- ========================================================
+-- AREA 51 TEXTILE SHOP DATABASE SCHEMA & SECURITY POLICIES
+-- ========================================================
+
+-- 1. PROFILES TABLE (Role-Based Authentication)
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  full_name TEXT,
+  role TEXT NOT NULL DEFAULT 'CUSTOMER' CHECK (role IN ('ADMIN', 'CUSTOMER')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Enable RLS on profiles
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow users to read their own profile" ON public.profiles
+  FOR SELECT USING (auth.uid() = id);
+
+CREATE POLICY "Allow admin full access to profiles" ON public.profiles
+  FOR ALL USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'ADMIN'
+    )
+  );
+
+-- 2. PRODUCTS TABLE
 CREATE TABLE IF NOT EXISTS public.products (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -13,18 +39,122 @@ CREATE TABLE IF NOT EXISTS public.products (
   is_new_arrival BOOLEAN DEFAULT false,
   material TEXT,
   care_instructions TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+  stock_status TEXT DEFAULT 'In Stock' CHECK (stock_status IN ('In Stock', 'Out of Stock', 'Low Stock')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Enable Row Level Security (RLS)
+-- Enable RLS on products
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 
 -- Allow public read access to products
-CREATE POLICY "Allow public read access" ON public.products
+CREATE POLICY "Allow public read access to products" ON public.products
   FOR SELECT USING (true);
 
--- Insert Sample Products into Supabase
-INSERT INTO public.products (id, name, price, description, category, colors, sizes, images, badge, is_featured, is_new_arrival, material, care_instructions)
+-- Allow only ADMIN to insert/update/delete products
+CREATE POLICY "Allow admin to insert products" ON public.products
+  FOR INSERT WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'ADMIN'
+    )
+  );
+
+CREATE POLICY "Allow admin to update products" ON public.products
+  FOR UPDATE USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'ADMIN'
+    )
+  );
+
+CREATE POLICY "Allow admin to delete products" ON public.products
+  FOR DELETE USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'ADMIN'
+    )
+  );
+
+-- 3. CATEGORIES TABLE
+CREATE TABLE IF NOT EXISTS public.categories (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  slug TEXT NOT NULL UNIQUE,
+  description TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Enable RLS on categories
+ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow public read access to categories" ON public.categories
+  FOR SELECT USING (true);
+
+CREATE POLICY "Allow admin to manage categories" ON public.categories
+  FOR ALL USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'ADMIN'
+    )
+  );
+
+-- Insert Default Categories
+INSERT INTO public.categories (id, name, slug, description)
+VALUES
+  ('t-shirts', 'T-Shirts', 't-shirts', 'Heavyweight oversised and classic tees'),
+  ('shirts', 'Shirts', 'shirts', 'Smart casual and formal cotton shirts'),
+  ('hoodies', 'Hoodies', 'hoodies', 'Cozy fleece and streetwear hoodies'),
+  ('pants', 'Pants', 'pants', 'Trousers, denim jeans, and cargo pants'),
+  ('jackets', 'Jackets', 'jackets', 'Outerwear and denim jackets'),
+  ('dresses', 'Dresses', 'dresses', 'Casual and formal apparel'),
+  ('sarees', 'Sarees', 'sarees', 'Traditional silk and cotton sarees'),
+  ('kids-wear', 'Kids Wear', 'kids-wear', 'Apparel for children'),
+  ('accessories', 'Accessories', 'accessories', 'Hats, bags, and apparel accents')
+ON CONFLICT (id) DO NOTHING;
+
+-- 4. ORDERS & ORDER ITEMS TABLES
+CREATE TABLE IF NOT EXISTS public.orders (
+  id TEXT PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id),
+  customer_name TEXT NOT NULL,
+  customer_email TEXT NOT NULL,
+  customer_phone TEXT,
+  shipping_address TEXT NOT NULL,
+  total_amount NUMERIC NOT NULL,
+  status TEXT DEFAULT 'Pending' CHECK (status IN ('Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.order_items (
+  id TEXT PRIMARY KEY,
+  order_id TEXT REFERENCES public.orders(id) ON DELETE CASCADE,
+  product_id TEXT NOT NULL,
+  product_name TEXT NOT NULL,
+  price NUMERIC NOT NULL,
+  quantity INTEGER NOT NULL,
+  size TEXT,
+  color TEXT
+);
+
+-- Enable RLS on orders
+ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.order_items ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow customer to view own orders" ON public.orders
+  FOR SELECT USING (auth.uid() = user_id OR EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'ADMIN'));
+
+CREATE POLICY "Allow public order creation" ON public.orders
+  FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Allow public order items creation" ON public.order_items
+  FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Allow admin to update orders" ON public.orders
+  FOR UPDATE USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'ADMIN'
+    )
+  );
+
+-- 5. SAMPLE PRODUCTS SEED DATA
+INSERT INTO public.products (id, name, price, description, category, colors, sizes, images, badge, is_featured, is_new_arrival, material, care_instructions, stock_status)
 VALUES
   (
     'archive-oversized-tee',
@@ -39,7 +169,8 @@ VALUES
     true,
     false,
     '100% Premium Cotton, 240 GSM',
-    'Machine wash cold. Tumble dry low.'
+    'Machine wash cold. Tumble dry low.',
+    'In Stock'
   ),
   (
     'signature-graphic-tee',
@@ -54,7 +185,8 @@ VALUES
     true,
     true,
     '100% Cotton, 220 GSM',
-    'Machine wash cold inside out.'
+    'Machine wash cold inside out.',
+    'In Stock'
   ),
   (
     'essential-oversized-shirt',
@@ -69,6 +201,23 @@ VALUES
     false,
     true,
     'Cotton-Linen Blend',
-    'Dry clean or hand wash cold.'
+    'Dry clean or hand wash cold.',
+    'In Stock'
+  ),
+  (
+    'elevated-emerald-dress-shirt',
+    'Elevated Emerald Floral Dress Shirt',
+    2499,
+    'Crafted from 100% long-staple cotton with a luxurious satin finish. Features an exclusive emerald floral print, tailored spread collar, and smooth button closure.',
+    'Shirts',
+    '[{"name": "Emerald Teal", "hex": "#0f766e"}, {"name": "Sand Beige", "hex": "#d97706"}]'::jsonb,
+    '["S", "M", "L", "XL", "XXL"]'::jsonb,
+    '["https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?w=800&q=80", "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=800&q=80"]'::jsonb,
+    'Luxury',
+    true,
+    true,
+    '100% Egyptian Cotton, Satin Finish',
+    'Machine wash warm / Dry clean recommended. Warm iron.',
+    'In Stock'
   )
 ON CONFLICT (id) DO NOTHING;

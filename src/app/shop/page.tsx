@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { SlidersHorizontal, ChevronDown } from 'lucide-react';
 import ProductGrid from '@/components/ProductGrid';
 import SectionHeading from '@/components/SectionHeading';
-import { products, categories, searchProducts, sortProducts } from '@/data/products';
+import { useProducts } from '@/context/ProductContext';
 import { SortOption } from '@/types/product';
 
 const sortOptions: { value: SortOption; label: string }[] = [
@@ -18,6 +18,8 @@ const sortOptions: { value: SortOption; label: string }[] = [
 
 function ShopContent() {
   const searchParams = useSearchParams();
+  const { products, categories: dynamicCategories } = useProducts();
+
   const initialCategory = searchParams.get('category') || 'All';
   const initialSearch = searchParams.get('search') || '';
   const initialFilter = searchParams.get('filter') || '';
@@ -35,8 +37,14 @@ function ShopContent() {
   const filteredProducts = useMemo(() => {
     let result = [...products];
 
-    if (searchQuery) {
-      result = searchProducts(searchQuery);
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          p.description.toLowerCase().includes(q) ||
+          p.category.toLowerCase().includes(q)
+      );
     }
 
     if (initialFilter === 'new') {
@@ -44,13 +52,19 @@ function ShopContent() {
     }
 
     if (activeCategory !== 'All') {
-      result = result.filter((p) => p.category === activeCategory);
+      result = result.filter((p) => p.category.toLowerCase() === activeCategory.toLowerCase());
     }
 
-    result = sortProducts(result, sortBy);
+    // Sort
+    result.sort((a, b) => {
+      if (sortBy === 'price-low') return a.price - b.price;
+      if (sortBy === 'price-high') return b.price - a.price;
+      if (sortBy === 'newest') return (b.isNewArrival ? 1 : 0) - (a.isNewArrival ? 1 : 0);
+      return (b.isFeatured ? 1 : 0) - (a.isFeatured ? 1 : 0);
+    });
 
     return result;
-  }, [activeCategory, sortBy, searchQuery, initialFilter]);
+  }, [products, activeCategory, sortBy, searchQuery, initialFilter]);
 
   return (
     <>
@@ -58,8 +72,8 @@ function ShopContent() {
         title={initialFilter === 'new' ? 'NEW ARRIVALS' : 'SHOP ALL'}
         subtitle={
           initialFilter === 'new'
-            ? 'The latest from AREA 51 ARCHIVES.'
-            : 'Explore our complete collection of premium streetwear.'
+            ? 'The latest clothing items from AREA 51 Textile.'
+            : 'Explore our complete collection of premium textile and apparel.'
         }
       />
 
@@ -70,7 +84,7 @@ function ShopContent() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search products..."
+            placeholder="Search products by name, material, category..."
             className="w-full bg-white/[0.04] border border-white/[0.08] py-2.5 px-4 text-sm text-white placeholder:text-[#A6A6B0]/60 focus:outline-none focus:border-[#8B3DFF]/50 transition-colors"
             aria-label="Search products"
           />
@@ -106,13 +120,13 @@ function ShopContent() {
       {/* Category Filter */}
       <div className={`mb-8 ${showFilters ? 'block' : 'hidden md:block'}`}>
         <div className="flex flex-wrap gap-2">
-          {categories.map((cat) => (
+          {dynamicCategories.map((cat) => (
             <button
               key={cat}
               onClick={() => setActiveCategory(cat)}
               className={`px-4 py-2 text-xs font-semibold uppercase tracking-wider transition-all duration-300 ${
-                activeCategory === cat
-                  ? 'bg-gradient-to-r from-[#8B3DFF] to-[#B84DFF] text-white'
+                activeCategory.toLowerCase() === cat.toLowerCase()
+                  ? 'bg-gradient-to-r from-[#8B3DFF] to-[#B84DFF] text-white shadow-[0_0_15px_rgba(139,61,255,0.4)]'
                   : 'border border-white/[0.08] text-[#A6A6B0] hover:text-white hover:border-white/20'
               }`}
             >
@@ -124,7 +138,7 @@ function ShopContent() {
 
       {/* Results count */}
       <p className="text-xs text-[#A6A6B0] mb-6">
-        {filteredProducts.length} product{filteredProducts.length !== 1 ? 's' : ''}
+        Showing {filteredProducts.length} product{filteredProducts.length !== 1 ? 's' : ''}
       </p>
 
       {/* Product Grid */}
@@ -138,7 +152,7 @@ function ShopFallback() {
     <>
       <SectionHeading
         title="SHOP ALL"
-        subtitle="Explore our complete collection of premium streetwear."
+        subtitle="Explore our complete collection of premium textile and apparel."
       />
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
         {Array.from({ length: 8 }).map((_, i) => (

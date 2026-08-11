@@ -1,3 +1,6 @@
+'use client';
+
+import { useMemo } from 'react';
 import Hero from '@/components/Hero';
 import SectionHeading from '@/components/SectionHeading';
 import ProductGrid from '@/components/ProductGrid';
@@ -6,11 +9,20 @@ import EditorialSection from '@/components/EditorialSection';
 import WhyUs from '@/components/WhyUs';
 import SocialGallery from '@/components/SocialGallery';
 import Newsletter from '@/components/Newsletter';
-import { getFeaturedProducts, getNewArrivals } from '@/data/products';
+import { useProducts } from '@/context/ProductContext';
 
 export default function HomePage() {
-  const featured = getFeaturedProducts();
-  const newArrivals = getNewArrivals();
+  const { products } = useProducts();
+
+  const featured = useMemo(() => {
+    const list = products.filter((p) => p.isFeatured);
+    return list.length > 0 ? list : products;
+  }, [products]);
+
+  const newArrivals = useMemo(() => {
+    const list = products.filter((p) => p.isNewArrival);
+    return list.length > 0 ? list : products;
+  }, [products]);
 
   return (
     <>
@@ -22,7 +34,7 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <SectionHeading
             title="FEATURED COLLECTION"
-            subtitle="Curated pieces from our latest drop. Designed to stand out."
+            subtitle="Curated apparel & textiles from our latest drop."
           />
           <ProductGrid products={featured.slice(0, 4)} />
         </div>
@@ -33,7 +45,7 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <SectionHeading
             title="NEW ARRIVALS"
-            subtitle="Fresh off the line. Be the first to wear what's next."
+            subtitle="Fresh off the line. Explore the latest textile creations."
           />
           <ProductGrid products={newArrivals.slice(0, 4)} />
         </div>

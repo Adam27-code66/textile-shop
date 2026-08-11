@@ -5,6 +5,8 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { CartProvider } from '@/context/CartContext';
 import { WishlistProvider } from '@/context/WishlistContext';
+import { AuthProvider } from '@/context/AuthContext';
+import { ProductProvider } from '@/context/ProductContext';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -13,13 +15,13 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'AREA 51 ARCHIVES | Premium Streetwear',
+  title: 'AREA 51 ARCHIVES | Premium Textile & Apparel',
   description:
-    'Premium streetwear designed for those who refuse to blend in. Limited drops, unlimited expression. Shop oversized tees, hoodies, shirts, pants, and accessories.',
-  keywords: ['streetwear', 'fashion', 'clothing', 'premium', 'area 51', 'archives', 'urban'],
+    'Premium apparel designed for those who refuse to blend in. Shop oversized tees, shirts, hoodies, dresses, and fine textiles.',
+  keywords: ['textiles', 'apparel', 'streetwear', 'fashion', 'area 51', 'archives'],
   openGraph: {
-    title: 'AREA 51 ARCHIVES | Premium Streetwear',
-    description: 'Premium streetwear designed for those who refuse to blend in.',
+    title: 'AREA 51 ARCHIVES | Premium Textile & Apparel',
+    description: 'Premium apparel and textiles designed for those who refuse to blend in.',
     type: 'website',
   },
 };
@@ -32,13 +34,17 @@ export default function RootLayout({
   return (
     <html lang="en" className={inter.variable} data-scroll-behavior="smooth">
       <body className="min-h-screen bg-[#08090C] text-white antialiased">
-        <CartProvider>
-          <WishlistProvider>
-            <Navbar />
-            <main>{children}</main>
-            <Footer />
-          </WishlistProvider>
-        </CartProvider>
+        <AuthProvider>
+          <ProductProvider>
+            <CartProvider>
+              <WishlistProvider>
+                <Navbar />
+                <main>{children}</main>
+                <Footer />
+              </WishlistProvider>
+            </CartProvider>
+          </ProductProvider>
+        </AuthProvider>
       </body>
     </html>
   );

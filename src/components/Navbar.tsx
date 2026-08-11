@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Search, ShoppingBag, Heart, Menu, X } from 'lucide-react';
+import { Search, ShoppingBag, Heart, Menu, X, User, Shield, LogOut } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
+import { useAuth } from '@/context/AuthContext';
 import SearchBar from './SearchBar';
 
 const navLinks = [
@@ -18,8 +19,11 @@ export default function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+
   const { itemCount } = useCart();
   const { wishlist } = useWishlist();
+  const { user, isAdmin, logout } = useAuth();
 
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 20);
@@ -57,7 +61,7 @@ export default function Navbar() {
                   AREA 51
                 </span>
                 <span className="text-[8px] md:text-[9px] tracking-[0.35em] text-[#A6A6B0] uppercase">
-                  Archives
+                  Textile & Apparel
                 </span>
               </div>
             </Link>
@@ -73,6 +77,16 @@ export default function Navbar() {
                   {link.label}
                 </Link>
               ))}
+
+              {isAdmin && (
+                <Link
+                  href="/admin/dashboard"
+                  className="flex items-center gap-1.5 px-3 py-1 bg-gradient-to-r from-[#8B3DFF] to-[#B84DFF] text-white text-xs font-bold uppercase tracking-wider rounded shadow-[0_0_15px_rgba(139,61,255,0.4)]"
+                >
+                  <Shield size={12} />
+                  Admin Panel
+                </Link>
+              )}
             </div>
 
             {/* Desktop Right Icons */}
@@ -110,6 +124,70 @@ export default function Navbar() {
                   </span>
                 )}
               </Link>
+
+              {/* User Profile / Auth Menu */}
+              <div className="relative">
+                <button
+                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                  className="p-2.5 text-[#A6A6B0] hover:text-white transition-colors duration-300 flex items-center gap-1"
+                  aria-label="User menu"
+                >
+                  <User size={18} />
+                </button>
+
+                {isUserMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-56 bg-[#13141B] border border-white/10 rounded shadow-2xl py-2 z-50">
+                    {user ? (
+                      <div>
+                        <div className="px-4 py-2 border-b border-white/[0.06]">
+                          <p className="text-xs font-semibold text-white truncate">{user.fullName || 'User'}</p>
+                          <p className="text-[10px] text-[#A6A6B0] truncate">{user.email}</p>
+                          <span className="inline-block mt-1 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 bg-[#8B3DFF]/20 text-[#B84DFF] rounded border border-[#8B3DFF]/30">
+                            Role: {user.role}
+                          </span>
+                        </div>
+
+                        {isAdmin && (
+                          <Link
+                            href="/admin/dashboard"
+                            onClick={() => setIsUserMenuOpen(false)}
+                            className="flex items-center gap-2 px-4 py-2 text-xs text-[#B84DFF] font-semibold hover:bg-white/5 transition-colors"
+                          >
+                            <Shield size={14} /> Admin Dashboard
+                          </Link>
+                        )}
+
+                        <button
+                          onClick={() => {
+                            logout();
+                            setIsUserMenuOpen(false);
+                          }}
+                          className="w-full text-left flex items-center gap-2 px-4 py-2 text-xs text-red-400 hover:bg-white/5 transition-colors"
+                        >
+                          <LogOut size={14} /> Sign Out
+                        </button>
+                      </div>
+                    ) : (
+                      <div>
+                        <Link
+                          href="/login"
+                          onClick={() => setIsUserMenuOpen(false)}
+                          className="block px-4 py-2 text-xs font-medium text-white hover:bg-white/5 transition-colors"
+                        >
+                          Sign In
+                        </Link>
+                        <Link
+                          href="/register"
+                          onClick={() => setIsUserMenuOpen(false)}
+                          className="block px-4 py-2 text-xs font-medium text-[#B84DFF] hover:bg-white/5 transition-colors"
+                        >
+                          Sign Up (New Customer)
+                        </Link>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* Mobile Menu Toggle */}
               <button
@@ -164,26 +242,45 @@ export default function Navbar() {
                   {link.label}
                 </Link>
               ))}
-              <Link
-                href="/wishlist"
-                onClick={() => setIsMobileOpen(false)}
-                className="py-3 text-lg font-medium tracking-wider uppercase text-[#A6A6B0] hover:text-white hover:pl-2 transition-all duration-300 border-b border-white/[0.04] flex items-center gap-3"
-              >
-                <Heart size={18} />
-                Wishlist
-                {wishlist.length > 0 && (
-                  <span className="ml-auto bg-[#E23DFF] rounded-full px-2 py-0.5 text-[10px] font-bold text-white">
-                    {wishlist.length}
-                  </span>
-                )}
-              </Link>
-              <Link
-                href="/contact"
-                onClick={() => setIsMobileOpen(false)}
-                className="py-3 text-lg font-medium tracking-wider uppercase text-[#A6A6B0] hover:text-white hover:pl-2 transition-all duration-300"
-              >
-                Contact
-              </Link>
+
+              {isAdmin && (
+                <Link
+                  href="/admin/dashboard"
+                  onClick={() => setIsMobileOpen(false)}
+                  className="py-3 text-lg font-bold tracking-wider uppercase text-[#B84DFF] flex items-center gap-2 border-b border-white/[0.04]"
+                >
+                  <Shield size={18} /> Admin Panel
+                </Link>
+              )}
+
+              {user ? (
+                <button
+                  onClick={() => {
+                    logout();
+                    setIsMobileOpen(false);
+                  }}
+                  className="py-3 text-left text-lg font-medium tracking-wider uppercase text-red-400 flex items-center gap-2 border-b border-white/[0.04]"
+                >
+                  <LogOut size={18} /> Sign Out
+                </button>
+              ) : (
+                <>
+                  <Link
+                    href="/login"
+                    onClick={() => setIsMobileOpen(false)}
+                    className="py-3 text-lg font-medium tracking-wider uppercase text-white border-b border-white/[0.04]"
+                  >
+                    Sign In
+                  </Link>
+                  <Link
+                    href="/register"
+                    onClick={() => setIsMobileOpen(false)}
+                    className="py-3 text-lg font-medium tracking-wider uppercase text-[#B84DFF] border-b border-white/[0.04]"
+                  >
+                    Sign Up (New Customer)
+                  </Link>
+                </>
+              )}
             </nav>
           </div>
         </div>

@@ -12,6 +12,9 @@ export interface Product {
   isNewArrival?: boolean;
   material?: string;
   careInstructions?: string;
+  stockStatus?: 'In Stock' | 'Out of Stock' | 'Low Stock';
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface ProductColor {
@@ -19,9 +22,21 @@ export interface ProductColor {
   hex: string;
 }
 
-export type Size = 'S' | 'M' | 'L' | 'XL';
+export type Size = 'S' | 'M' | 'L' | 'XL' | 'XXL' | 'Free Size';
 
-export type Category = 'T-Shirts' | 'Hoodies' | 'Shirts' | 'Pants' | 'Accessories';
+export type Category = 
+  | 'T-Shirts' 
+  | 'Hoodies' 
+  | 'Shirts' 
+  | 'Pants' 
+  | 'Jeans'
+  | 'Trousers'
+  | 'Dresses'
+  | 'Sarees'
+  | 'Kids Wear'
+  | 'Jackets'
+  | 'Accessories'
+  | string;
 
 export type SortOption = 'featured' | 'newest' | 'price-low' | 'price-high';
 
