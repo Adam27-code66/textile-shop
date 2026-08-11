@@ -1,14 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { checkAdminAuth } from '@/lib/admin-auth';
-import { dynamicProductsStore, addOrUpdateDynamicProduct, deleteDynamicProduct } from '@/data/products';
 import { Product } from '@/types/product';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-user-role',
+  'Cache-Control': 'no-store, no-cache, must-revalidate',
 };
+
+function mapDbToProduct(item: any): Product {
+  return {
+    id: item.id,
+    name: item.name,
+    price: Number(item.price),
+    description: item.description || '',
+    category: item.category,
+    colors: Array.isArray(item.colors) ? item.colors : [],
+    sizes: Array.isArray(item.sizes) ? item.sizes : ['S', 'M', 'L', 'XL'],
+    images: Array.isArray(item.images) && item.images.length > 0
+      ? item.images
+      : ['https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=800&q=80'],
+    badge: item.badge || undefined,
+    isFeatured: Boolean(item.is_featured ?? item.isFeatured),
+    isNewArrival: Boolean(item.is_new_arrival ?? item.isNewArrival),
+    material: item.material,
+    careInstructions: item.care_instructions || item.careInstructions,
+    stockStatus: item.stock_status || item.stockStatus || 'In Stock',
+  };
+}
 
 export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });
@@ -20,41 +41,22 @@ export async function GET(
 ) {
   const { id } = await params;
   try {
-    const existingMemory = dynamicProductsStore.find((p) => p.id === id);
-
-    const { data: dbProduct } = await supabase
+    const { data: dbProduct, error } = await supabase
       .from('products')
       .select('*')
       .eq('id', id)
       .single();
 
-    if (dbProduct) {
-      const formatted: Product = {
-        id: dbProduct.id,
-        name: dbProduct.name,
-        price: Number(dbProduct.price),
-        description: dbProduct.description || '',
-        category: dbProduct.category,
-        colors: Array.isArray(dbProduct.colors) ? dbProduct.colors : [],
-        sizes: Array.isArray(dbProduct.sizes) ? dbProduct.sizes : ['S', 'M', 'L', 'XL'],
-        images: Array.isArray(dbProduct.images) && dbProduct.images.length > 0 ? dbProduct.images : ['https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=800&q=80'],
-        badge: dbProduct.badge || undefined,
-        isFeatured: Boolean(dbProduct.is_featured ?? dbProduct.isFeatured),
-        isNewArrival: Boolean(dbProduct.is_new_arrival ?? dbProduct.isNewArrival),
-        material: dbProduct.material,
-        careInstructions: dbProduct.care_instructions || dbProduct.careInstructions,
-        stockStatus: dbProduct.stock_status || dbProduct.stockStatus || 'In Stock'
-      };
-      return NextResponse.json({ success: true, data: formatted }, { headers: corsHeaders });
-    }
-
-    if (existingMemory) {
-      return NextResponse.json({ success: true, data: existingMemory }, { headers: corsHeaders });
+    if (error || !dbProduct) {
+      return NextResponse.json(
+        { success: false, error: 'Product not found' },
+        { status: 404, headers: corsHeaders }
+      );
     }
 
     return NextResponse.json(
-      { success: false, error: 'Product not found' },
-      { status: 404, headers: corsHeaders }
+      { success: true, data: mapDbToProduct(dbProduct) },
+      { headers: corsHeaders }
     );
   } catch (err: any) {
     return NextResponse.json(
@@ -73,72 +75,54 @@ export async function PUT(
 
   if (!isAdmin) {
     return NextResponse.json(
-      { success: false, error: 'Unauthorized: Admin privileges required to update products.' },
+      { success: false, error: 'Unauthorized: Admin privileges required.' },
       { status: 403, headers: corsHeaders }
     );
   }
 
   try {
     const body = await request.json();
-    const existing = dynamicProductsStore.find((p) => p.id === id);
 
-    const isFeatured = body.is_featured ?? body.isFeatured ?? existing?.isFeatured ?? false;
-    const isNewArrival = body.is_new_arrival ?? body.isNewArrival ?? existing?.isNewArrival ?? false;
-    const stockStatus = body.stock_status ?? body.stockStatus ?? existing?.stockStatus ?? 'In Stock';
-    const careInstructions = body.care_instructions ?? body.careInstructions ?? existing?.careInstructions ?? '';
+    const updatePayload: Record<string, any> = {};
+    if (body.name !== undefined) updatePayload.name = body.name;
+    if (body.price !== undefined) updatePayload.price = Number(body.price);
+    if (body.description !== undefined) updatePayload.description = body.description;
+    if (body.category !== undefined) updatePayload.category = body.category;
+    if (body.colors !== undefined) updatePayload.colors = body.colors;
+    if (body.sizes !== undefined) updatePayload.sizes = body.sizes;
+    if (body.images !== undefined) updatePayload.images = body.images;
+    if (body.badge !== undefined) updatePayload.badge = body.badge || null;
+    if (body.material !== undefined) updatePayload.material = body.material;
 
-    const formattedUpdated: Product = {
-      id,
-      name: body.name || existing?.name || 'Apparel Item',
-      price: Number(body.price || existing?.price || 999),
-      description: body.description ?? existing?.description ?? '',
-      category: body.category || existing?.category || 'Shirts',
-      colors: body.colors || existing?.colors || [],
-      sizes: body.sizes || existing?.sizes || ['S', 'M', 'L', 'XL'],
-      images: body.images || existing?.images || ['https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=800&q=80'],
-      badge: body.badge ?? existing?.badge,
-      isFeatured: Boolean(isFeatured),
-      isNewArrival: Boolean(isNewArrival),
-      material: body.material ?? existing?.material,
-      careInstructions,
-      stockStatus
-    };
+    if (body.isFeatured !== undefined || body.is_featured !== undefined) {
+      updatePayload.is_featured = Boolean(body.is_featured ?? body.isFeatured);
+    }
+    if (body.isNewArrival !== undefined || body.is_new_arrival !== undefined) {
+      updatePayload.is_new_arrival = Boolean(body.is_new_arrival ?? body.isNewArrival);
+    }
+    if (body.careInstructions !== undefined || body.care_instructions !== undefined) {
+      updatePayload.care_instructions = body.care_instructions ?? body.careInstructions;
+    }
+    if (body.stockStatus !== undefined || body.stock_status !== undefined) {
+      updatePayload.stock_status = body.stock_status ?? body.stockStatus;
+    }
 
-    // 1. Update in-memory store
-    addOrUpdateDynamicProduct(formattedUpdated);
-
-    // 2. Update Supabase DB with standard columns
-    const dbPayload = {
-      id,
-      name: formattedUpdated.name,
-      price: formattedUpdated.price,
-      description: formattedUpdated.description,
-      category: formattedUpdated.category,
-      colors: formattedUpdated.colors,
-      sizes: formattedUpdated.sizes,
-      images: formattedUpdated.images,
-      badge: formattedUpdated.badge || null,
-      is_featured: formattedUpdated.isFeatured,
-      is_new_arrival: formattedUpdated.isNewArrival,
-      material: formattedUpdated.material || '100% Premium Cotton',
-      care_instructions: formattedUpdated.careInstructions
-    };
-
-    const { error: dbError } = await supabase
+    const { data, error } = await supabase
       .from('products')
-      .update(dbPayload)
-      .eq('id', id);
+      .update(updatePayload)
+      .eq('id', id)
+      .select();
 
-    if (dbError) {
-      console.warn('Supabase DB Update notice:', dbError.message);
+    if (error) {
+      console.error('Supabase UPDATE error:', error.message);
+      return NextResponse.json(
+        { success: false, error: `Database error: ${error.message}` },
+        { status: 500, headers: corsHeaders }
+      );
     }
 
     return NextResponse.json(
-      {
-        success: true,
-        message: 'Product updated successfully!',
-        data: formattedUpdated
-      },
+      { success: true, message: 'Product updated!', data: data && data[0] ? mapDbToProduct(data[0]) : null },
       { headers: corsHeaders }
     );
   } catch (err: any) {
@@ -158,25 +142,27 @@ export async function DELETE(
 
   if (!isAdmin) {
     return NextResponse.json(
-      { success: false, error: 'Unauthorized: Admin privileges required to delete products.' },
+      { success: false, error: 'Unauthorized: Admin privileges required.' },
       { status: 403, headers: corsHeaders }
     );
   }
 
   try {
-    deleteDynamicProduct(id);
-
-    const { error: dbError } = await supabase
+    const { error } = await supabase
       .from('products')
       .delete()
       .eq('id', id);
 
-    if (dbError) {
-      console.warn('Supabase DB Delete notice:', dbError.message);
+    if (error) {
+      console.error('Supabase DELETE error:', error.message);
+      return NextResponse.json(
+        { success: false, error: `Database error: ${error.message}` },
+        { status: 500, headers: corsHeaders }
+      );
     }
 
     return NextResponse.json(
-      { success: true, message: `Product ${id} deleted successfully.` },
+      { success: true, message: `Product ${id} deleted.` },
       { headers: corsHeaders }
     );
   } catch (err: any) {

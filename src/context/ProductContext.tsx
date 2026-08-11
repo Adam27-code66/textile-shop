@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Product } from '@/types/product';
-import { products as initialProducts } from '@/data/products';
+import { products as hardcodedProducts } from '@/data/products';
 
 interface ProductContextType {
   products: Product[];
@@ -32,66 +32,31 @@ const DEFAULT_CATEGORIES = [
 ];
 
 export function ProductProvider({ children }: { children: React.ReactNode }) {
-  const [productsList, setProductsList] = useState<Product[]>(initialProducts);
+  const [productsList, setProductsList] = useState<Product[]>(hardcodedProducts);
   const [categoriesList, setCategoriesList] = useState<string[]>(DEFAULT_CATEGORIES);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchProducts = useCallback(async () => {
     setIsLoading(true);
+    setError(null);
     try {
-      // 1. Read stored items from local storage first for instant UI response
-      const localProductsStr = localStorage.getItem('area51_dynamic_products');
-      let localItems: Product[] = [];
-      if (localProductsStr) {
-        try {
-          localItems = JSON.parse(localProductsStr);
-        } catch (e) {
-          // ignore
-        }
-      }
-
-      // 2. Fetch from backend API
-      const res = await fetch('/api/products');
+      const res = await fetch('/api/products', {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' }
+      });
       if (res.ok) {
         const json = await res.json();
         if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-          const apiProducts: Product[] = json.data.map((item: any) => ({
-            id: item.id,
-            name: item.name,
-            price: Number(item.price),
-            description: item.description || '',
-            category: item.category,
-            colors: Array.isArray(item.colors) ? item.colors : [],
-            sizes: Array.isArray(item.sizes) ? item.sizes : ['S', 'M', 'L', 'XL'],
-            images: Array.isArray(item.images) && item.images.length > 0 ? item.images : ['https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=800&q=80'],
-            badge: item.badge || undefined,
-            isFeatured: Boolean(item.is_featured ?? item.isFeatured),
-            isNewArrival: Boolean(item.is_new_arrival ?? item.isNewArrival),
-            material: item.material,
-            careInstructions: item.care_instructions || item.careInstructions,
-            stockStatus: item.stock_status || item.stockStatus || 'In Stock'
-          }));
-
-          // Merge API items with local items (API taking priority)
-          const mergedMap = new Map<string, Product>();
-          initialProducts.forEach((p) => mergedMap.set(p.id, p));
-          localItems.forEach((p) => mergedMap.set(p.id, p));
-          apiProducts.forEach((p) => mergedMap.set(p.id, p));
-
-          const mergedList = Array.from(mergedMap.values());
-          setProductsList(mergedList);
-          localStorage.setItem('area51_dynamic_products', JSON.stringify(mergedList));
-          setIsLoading(false);
+          setProductsList(json.data);
           return;
         }
       }
-
-      if (localItems.length > 0) {
-        setProductsList(localItems);
-      }
+      // If API returns empty, use hardcoded products
+      setProductsList(hardcodedProducts);
     } catch (err: any) {
-      console.warn('API products load notice:', err);
+      console.warn('Failed to fetch products from API:', err);
+      setProductsList(hardcodedProducts);
     } finally {
       setIsLoading(false);
     }
@@ -130,13 +95,7 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
         stockStatus: newProductData.stockStatus || 'In Stock'
       };
 
-      // 1. Immediately update state & local storage
-      const updatedList = [fullProduct, ...productsList.filter((p) => p.id !== fullProduct.id)];
-      setProductsList(updatedList);
-      localStorage.setItem('area51_dynamic_products', JSON.stringify(updatedList));
-
-      // 2. Call API
-      await fetch('/api/products', {
+      const res = await fetch('/api/products', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -145,9 +104,14 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify(fullProduct)
       });
 
-      // 3. Refresh from API
-      await fetchProducts();
+      const json = await res.json();
 
+      if (!json.success) {
+        return { success: false, error: json.error || 'Failed to save product to database' };
+      }
+
+      // Refresh the full product list from database
+      await fetchProducts();
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message || 'Failed to add product' };
@@ -156,29 +120,23 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
 
   const updateProduct = async (id: string, updatedData: Partial<Product>) => {
     try {
-      const existing = productsList.find((p) => p.id === id);
-      if (!existing) return { success: false, error: 'Product not found' };
-
-      const merged: Product = { ...existing, ...updatedData };
-
-      // 1. Immediately update local state
-      const updatedList = productsList.map((p) => (p.id === id ? merged : p));
-      setProductsList(updatedList);
-      localStorage.setItem('area51_dynamic_products', JSON.stringify(updatedList));
-
-      // 2. Call API
-      await fetch(`/api/products/${id}`, {
+      const res = await fetch(`/api/products/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'x-user-role': 'ADMIN'
         },
-        body: JSON.stringify(merged)
+        body: JSON.stringify(updatedData)
       });
 
-      // 3. Refresh from API
-      await fetchProducts();
+      const json = await res.json();
 
+      if (!json.success) {
+        return { success: false, error: json.error || 'Failed to update product in database' };
+      }
+
+      // Refresh the full product list from database
+      await fetchProducts();
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message || 'Failed to update product' };
@@ -187,22 +145,21 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
 
   const deleteProduct = async (id: string) => {
     try {
-      // 1. Immediately update local state
-      const updatedList = productsList.filter((p) => p.id !== id);
-      setProductsList(updatedList);
-      localStorage.setItem('area51_dynamic_products', JSON.stringify(updatedList));
-
-      // 2. Call API
-      await fetch(`/api/products/${id}`, {
+      const res = await fetch(`/api/products/${id}`, {
         method: 'DELETE',
         headers: {
           'x-user-role': 'ADMIN'
         }
       });
 
-      // 3. Refresh from API
-      await fetchProducts();
+      const json = await res.json();
 
+      if (!json.success) {
+        return { success: false, error: json.error || 'Failed to delete product from database' };
+      }
+
+      // Refresh the full product list from database
+      await fetchProducts();
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message || 'Failed to delete product' };
@@ -211,8 +168,7 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
 
   const addCategory = async (catName: string) => {
     if (!categoriesList.includes(catName)) {
-      const nextCategories = [...categoriesList, catName];
-      setCategoriesList(nextCategories);
+      setCategoriesList([...categoriesList, catName]);
     }
     return { success: true };
   };
