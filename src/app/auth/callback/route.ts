@@ -51,30 +51,29 @@ export async function GET(request: NextRequest) {
         userEmail.split('@')[0] ||
         'User';
 
-      // Retrieve role from profiles table
+      const isAdminEmail = userEmail.trim().toLowerCase() === 'adamsamr1127@gmail.com';
+
+      // Retrieve role from profiles table or set ADMIN for adamsamr1127@gmail.com
       const { data: existingProfile } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .single();
 
-      let role = 'CUSTOMER';
-      if (existingProfile?.role) {
-        role = existingProfile.role;
-      } else {
-        // Upsert profile for new Google user if missing
-        await supabase.from('profiles').upsert(
-          [
-            {
-              id: user.id,
-              email: userEmail,
-              full_name: userName,
-              role: 'CUSTOMER',
-            },
-          ],
-          { onConflict: 'id' }
-        );
-      }
+      let role = isAdminEmail ? 'ADMIN' : (existingProfile?.role || 'CUSTOMER');
+
+      // Upsert profile with correct role
+      await supabase.from('profiles').upsert(
+        [
+          {
+            id: user.id,
+            email: userEmail,
+            full_name: userName,
+            role,
+          },
+        ],
+        { onConflict: 'id' }
+      );
 
       // Redirect to / (or /admin/dashboard if ADMIN) after successful login
       const targetPath = role === 'ADMIN' ? '/admin/dashboard' : next;

@@ -32,7 +32,12 @@ function clearRoleCookie() {
   document.cookie = `area51_user_role=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
 }
 
-async function fetchUserRole(userId: string): Promise<UserRole> {
+const ADMIN_EMAIL = 'adamsamr1127@gmail.com';
+
+async function fetchUserRole(userId: string, email?: string): Promise<UserRole> {
+  if (email && email.toLowerCase() === ADMIN_EMAIL) {
+    return 'ADMIN';
+  }
   try {
     const { data } = await supabase
       .from('profiles')
@@ -46,14 +51,15 @@ async function fetchUserRole(userId: string): Promise<UserRole> {
 }
 
 async function buildUserProfile(authUser: User): Promise<UserProfile> {
-  const role = await fetchUserRole(authUser.id);
+  const email = authUser.email || '';
+  const role = await fetchUserRole(authUser.id, email);
   return {
     id: authUser.id,
-    email: authUser.email || '',
+    email,
     fullName:
       authUser.user_metadata?.full_name ||
       authUser.user_metadata?.name ||
-      authUser.email?.split('@')[0] ||
+      email.split('@')[0] ||
       'User',
     role,
     createdAt: authUser.created_at || new Date().toISOString(),
