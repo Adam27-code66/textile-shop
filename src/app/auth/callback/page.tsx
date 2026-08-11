@@ -1,13 +1,12 @@
 'use client';
 
 import { useEffect, useState, useRef, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { AlertCircle, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
 function CallbackHandler() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const isProcessingRef = useRef<boolean>(false);
@@ -16,7 +15,6 @@ function CallbackHandler() {
     let isSubscribed = true;
 
     async function handleAuthCallback() {
-      // Avoid double execution in React Strict Mode
       if (isProcessingRef.current) return;
       isProcessingRef.current = true;
 
@@ -25,19 +23,18 @@ function CallbackHandler() {
         const urlError = searchParams.get('error_description') || searchParams.get('error');
         let authUser = null;
 
-        // 1. First check if a valid session already exists
+        // 1. Check existing session first
         const { data: initialSession } = await supabase.auth.getSession();
         if (initialSession?.session?.user) {
           authUser = initialSession.session.user;
         }
 
-        // 2. If no session yet, and code is present, exchange the code
+        // 2. Exchange code if no session yet
         if (!authUser && code) {
           const { data, error } = await supabase.auth.exchangeCodeForSession(code);
           if (data?.user) {
             authUser = data.user;
           } else if (error) {
-            // Check session again in case exchange set session before error
             const { data: retrySession } = await supabase.auth.getSession();
             if (retrySession?.session?.user) {
               authUser = retrySession.session.user;
@@ -48,7 +45,7 @@ function CallbackHandler() {
           }
         }
 
-        // 3. Fallback check for URL errors if no code or session
+        // 3. Fallback checks
         if (!authUser) {
           if (urlError) {
             if (isSubscribed) setErrorMsg(urlError);
@@ -62,46 +59,56 @@ function CallbackHandler() {
           return;
         }
 
-        // 4. Retrieve user role from profiles table
-        const { data: existingProfile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', authUser.id)
-          .single();
-
+        // 4. Retrieve user role with fast 2s timeout fallback
         let role = 'CUSTOMER';
-        if (existingProfile?.role) {
-          role = existingProfile.role;
-        } else {
-          // Create profile for new Google user if missing
-          const userName =
-            authUser.user_metadata?.full_name ||
-            authUser.user_metadata?.name ||
-            authUser.email?.split('@')[0] ||
-            'User';
+        try {
+          const profileQuery = supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', authUser.id)
+            .single();
 
-          const { error: profileError } = await supabase.from('profiles').insert([
-            {
-              id: authUser.id,
-              email: authUser.email || '',
-              full_name: userName,
-              role: 'CUSTOMER',
-            },
-          ]);
+          const timeoutPromise = new Promise<{ data: any }>((resolve) =>
+            setTimeout(() => resolve({ data: null }), 2000)
+          );
 
-          if (profileError) {
-            console.warn('Profile creation notice:', profileError.message);
+          const result: any = await Promise.race([profileQuery, timeoutPromise]);
+          if (result?.data?.role) {
+            role = result.data.role;
+          } else {
+            // Background profile insert if missing
+            const userName =
+              authUser.user_metadata?.full_name ||
+              authUser.user_metadata?.name ||
+              authUser.email?.split('@')[0] ||
+              'User';
+
+            (async () => {
+              try {
+                await supabase.from('profiles').insert([
+                  {
+                    id: authUser.id,
+                    email: authUser.email || '',
+                    full_name: userName,
+                    role: 'CUSTOMER',
+                  },
+                ]);
+              } catch {
+                // ignore
+              }
+            })();
+
           }
+        } catch (e) {
+          console.warn('Profile fetch notice:', e);
         }
 
         // 5. Set role cookie for middleware route protection
         document.cookie = `area51_user_role=${role}; path=/; max-age=86400; SameSite=Lax`;
 
-        // 6. Remove OAuth code from URL & redirect based on role
+        // 6. Hard redirect to destination page immediately
         const destination = role === 'ADMIN' ? '/admin/dashboard' : '/shop';
-        if (isSubscribed) {
-          router.replace(destination);
-        }
+        window.location.href = destination;
       } catch (err: any) {
         if (isSubscribed) {
           setErrorMsg(err.message || 'An unexpected error occurred during authentication.');
@@ -114,7 +121,7 @@ function CallbackHandler() {
     return () => {
       isSubscribed = false;
     };
-  }, [router, searchParams]);
+  }, [searchParams]);
 
   if (errorMsg) {
     return (
