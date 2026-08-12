@@ -47,7 +47,7 @@ function LoginFormContent() {
   const handleGoogleSignIn = async () => {
     setErrorMessage('');
     setIsGoogleLoading(true);
-    const result = await signInWithGoogle();
+    const result = await signInWithGoogle('login');
     if (!result.success) {
       setErrorMessage(result.error || 'Google sign-in failed. Please try again.');
       setIsGoogleLoading(false);

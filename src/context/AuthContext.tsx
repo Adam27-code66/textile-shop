@@ -16,7 +16,7 @@ interface AuthContextType {
   role: UserRole | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<LoginResult>;
-  signInWithGoogle: () => Promise<{ success: boolean; error?: string }>;
+  signInWithGoogle: (mode?: 'login' | 'register') => Promise<{ success: boolean; error?: string }>;
   register: (fullName: string, email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   isAdmin: boolean;
@@ -157,8 +157,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Google OAuth Sign In
-  const signInWithGoogle = async (): Promise<{ success: boolean; error?: string }> => {
+  // Google OAuth Sign In / Sign Up
+  const signInWithGoogle = async (mode: 'login' | 'register' = 'login'): Promise<{ success: boolean; error?: string }> => {
     try {
       const origin = typeof window !== 'undefined'
         ? window.location.origin
@@ -167,7 +167,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${origin}/auth/callback`,
+          redirectTo: `${origin}/auth/callback?mode=${mode}`,
         },
       });
 
@@ -177,7 +177,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       return { success: true };
     } catch (err: any) {
-      return { success: false, error: err.message || 'Google sign-in failed.' };
+      return { success: false, error: err.message || 'Google authentication failed.' };
     }
   };
 

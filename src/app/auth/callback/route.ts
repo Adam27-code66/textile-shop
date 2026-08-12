@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get('code');
   const error = searchParams.get('error');
   const errorDescription = searchParams.get('error_description');
+  const mode = searchParams.get('mode') || 'login';
   const next = searchParams.get('next') || '/';
 
   // 1. Handle OAuth errors properly without showing "Missing auth code"
@@ -53,16 +54,25 @@ export async function GET(request: NextRequest) {
 
       const isAdminEmail = userEmail.trim().toLowerCase() === 'adamsamr1127@gmail.com';
 
-      // Retrieve role from profiles table or set ADMIN for adamsamr1127@gmail.com
+      // Check if user is already registered in profiles table
       const { data: existingProfile } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .single();
 
+      // STRICT REGISTRATION GUARD:
+      // If an unregistered customer attempts to Sign In directly without registering first
+      if (!isAdminEmail && !existingProfile && mode === 'login') {
+        await supabase.auth.signOut();
+        const registerUrl = new URL('/register', currentOrigin);
+        registerUrl.searchParams.set('error', 'Account not found. You must Register (Sign Up) first before signing in!');
+        return NextResponse.redirect(registerUrl);
+      }
+
       let role = isAdminEmail ? 'ADMIN' : (existingProfile?.role || 'CUSTOMER');
 
-      // Upsert profile with correct role
+      // Upsert profile for registered customer or admin
       await supabase.from('profiles').upsert(
         [
           {
@@ -75,7 +85,7 @@ export async function GET(request: NextRequest) {
         { onConflict: 'id' }
       );
 
-      // Redirect to / (or /admin/dashboard if ADMIN) after successful login
+      // Redirect to / (or /admin/dashboard if ADMIN) after successful login/registration
       const targetPath = role === 'ADMIN' ? '/admin/dashboard' : next;
       const response = NextResponse.redirect(new URL(targetPath, currentOrigin));
 
