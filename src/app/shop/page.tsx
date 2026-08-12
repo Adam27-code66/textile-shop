@@ -18,7 +18,7 @@ const sortOptions: { value: SortOption; label: string }[] = [
 
 function ShopContent() {
   const searchParams = useSearchParams();
-  const { products, categories: dynamicCategories } = useProducts();
+  const { products, categories: dynamicCategories, isLoading } = useProducts();
 
   const initialCategory = searchParams.get('category') || 'All';
   const initialSearch = searchParams.get('search') || '';
@@ -55,16 +55,30 @@ function ShopContent() {
       result = result.filter((p) => p.category.toLowerCase() === activeCategory.toLowerCase());
     }
 
-    // Sort
+    // Deterministic Stable Sort
     result.sort((a, b) => {
-      if (sortBy === 'price-low') return a.price - b.price;
-      if (sortBy === 'price-high') return b.price - a.price;
-      if (sortBy === 'newest') return (b.isNewArrival ? 1 : 0) - (a.isNewArrival ? 1 : 0);
-      return (b.isFeatured ? 1 : 0) - (a.isFeatured ? 1 : 0);
+      let cmp = 0;
+      if (sortBy === 'price-low') {
+        cmp = a.price - b.price;
+      } else if (sortBy === 'price-high') {
+        cmp = b.price - a.price;
+      } else if (sortBy === 'newest') {
+        cmp = (b.isNewArrival ? 1 : 0) - (a.isNewArrival ? 1 : 0);
+      } else {
+        cmp = (b.isFeatured ? 1 : 0) - (a.isFeatured ? 1 : 0);
+      }
+
+      if (cmp !== 0) return cmp;
+      // Stable tie-breaker by product ID
+      return a.id.localeCompare(b.id);
     });
 
     return result;
   }, [products, activeCategory, sortBy, searchQuery, initialFilter]);
+
+  if (isLoading) {
+    return <ShopFallback />;
+  }
 
   return (
     <>

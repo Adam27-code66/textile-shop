@@ -32,7 +32,7 @@ const DEFAULT_CATEGORIES = [
 ];
 
 export function ProductProvider({ children }: { children: React.ReactNode }) {
-  const [productsList, setProductsList] = useState<Product[]>(hardcodedProducts);
+  const [productsList, setProductsList] = useState<Product[]>([]);
   const [categoriesList, setCategoriesList] = useState<string[]>(DEFAULT_CATEGORIES);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
