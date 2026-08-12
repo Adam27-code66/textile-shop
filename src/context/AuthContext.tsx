@@ -130,11 +130,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error || !data.user) {
         setIsLoading(false);
-        const isInvalidCreds = error?.message?.toLowerCase().includes('invalid login credentials');
-        const customError = isInvalidCreds
-          ? 'Account not found. If you have not created an account yet, please Sign Up first!'
-          : (error?.message || 'Invalid email or password.');
-        return { success: false, error: customError };
+
+        // Check if profile exists in database
+        const { data: existingProf } = await supabase
+          .from('profiles')
+          .select('id, role')
+          .eq('email', cleanEmail)
+          .maybeSingle();
+
+        if (existingProf) {
+          return {
+            success: false,
+            error: 'Incorrect password, or this account was created using Google Sign In. Please click "Continue with Google" above.',
+          };
+        }
+
+        return {
+          success: false,
+          error: 'Account not found. Please click "Create Account (Sign Up)" below to register first!',
+        };
       }
 
       const profile = await buildUserProfile(data.user);
@@ -201,23 +215,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (data?.user) {
+        const assignedRole: UserRole = cleanEmail === ADMIN_EMAIL ? 'ADMIN' : 'CUSTOMER';
+
         // Create profile entry
         await supabase.from('profiles').upsert([{
           id: data.user.id,
           email: cleanEmail,
           full_name: fullName,
-          role: 'CUSTOMER',
+          role: assignedRole,
         }], { onConflict: 'id' });
 
         const profile: UserProfile = {
           id: data.user.id,
           email: cleanEmail,
           fullName,
-          role: 'CUSTOMER',
+          role: assignedRole,
           createdAt: new Date().toISOString(),
         };
         setUser(profile);
-        setRoleCookie('CUSTOMER');
+        setRoleCookie(assignedRole);
       }
 
       setIsLoading(false);
