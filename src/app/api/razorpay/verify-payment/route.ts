@@ -66,6 +66,7 @@ export async function POST(request: NextRequest) {
 
     // 3. Create Verified Order Record in Supabase
     const orderId = `ORD-${Date.now().toString().slice(-6)}`;
+    const now = new Date().toISOString();
     const newOrder = {
       id: orderId,
       user_id: userId,
@@ -79,7 +80,8 @@ export async function POST(request: NextRequest) {
       razorpay_order_id,
       razorpay_payment_id,
       razorpay_signature,
-      created_at: new Date().toISOString(),
+      created_at: now,
+      updated_at: now,
     };
 
     const { error: orderError } = await supabase.from('orders').insert([newOrder]);
@@ -87,7 +89,12 @@ export async function POST(request: NextRequest) {
     if (orderError) {
       console.error('[SUPABASE_ORDER_INSERT_ERROR]', orderError);
       return NextResponse.json(
-        { success: false, error: `Failed to save order to database: ${orderError.message}` },
+        { 
+          success: false, 
+          error: `Failed to save order to database: ${orderError.message}. Please ensure the public.orders table exists in Supabase.`,
+          orderId,
+          paymentStatus: 'PAID'
+        },
         { status: 500, headers: corsHeaders }
       );
     }

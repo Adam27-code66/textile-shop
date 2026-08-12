@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
             payment_status: 'Paid',
             status: 'Processing',
             razorpay_payment_id: paymentId || undefined,
+            updated_at: new Date().toISOString(),
           })
           .eq('razorpay_order_id', orderId);
       }

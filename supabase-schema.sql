@@ -109,7 +109,8 @@ CREATE TABLE IF NOT EXISTS public.orders (
   razorpay_payment_id TEXT,
   razorpay_signature TEXT,
   payment_status TEXT DEFAULT 'Pending' CHECK (payment_status IN ('Pending', 'Paid', 'Failed')),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.order_items (

@@ -44,6 +44,7 @@ export async function POST(request: NextRequest) {
     } = body;
 
     const orderId = `ORD-${Date.now().toString().slice(-6)}`;
+    const now = new Date().toISOString();
     const newOrder = {
       id: orderId,
       customer_name: customerName,
@@ -52,7 +53,9 @@ export async function POST(request: NextRequest) {
       shipping_address: shippingAddress,
       total_amount: Number(totalAmount),
       status: 'Pending',
-      created_at: new Date().toISOString()
+      payment_status: 'Pending',
+      created_at: now,
+      updated_at: now,
     };
 
     const { data, error } = await supabase.from('orders').insert([newOrder]).select();
