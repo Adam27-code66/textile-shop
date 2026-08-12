@@ -17,7 +17,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<LoginResult>;
   signInWithGoogle: (mode?: 'login' | 'register') => Promise<{ success: boolean; error?: string }>;
-  register: (fullName: string, email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  register: (fullName: string, email: string, password: string) => Promise<{ success: boolean; error?: string; message?: string }>;
   logout: () => Promise<void>;
   isAdmin: boolean;
 }
@@ -138,16 +138,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .eq('email', cleanEmail)
           .maybeSingle();
 
-        if (existingProf) {
+        if (!existingProf) {
           return {
             success: false,
-            error: 'Incorrect password, or this account was created using Google Sign In. Please click "Continue with Google" above.',
+            error: 'Account not found. Please create an account first.',
           };
         }
 
         return {
           success: false,
-          error: 'Account not found. Please click "Create Account (Sign Up)" below to register first!',
+          error: 'Incorrect email or password.',
         };
       }
 
@@ -186,12 +186,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) {
-        return { success: false, error: error.message };
+        return { success: false, error: 'Google sign-in failed. Please try again.' };
       }
 
       return { success: true };
     } catch (err: any) {
-      return { success: false, error: err.message || 'Google authentication failed.' };
+      return { success: false, error: 'Google sign-in failed. Please try again.' };
     }
   };
 
@@ -201,6 +201,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const cleanEmail = emailInput.trim().toLowerCase();
 
+      // 1. Pre-check if email already exists in profiles table
+      const { data: existingProf } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('email', cleanEmail)
+        .maybeSingle();
+
+      if (existingProf) {
+        setIsLoading(false);
+        return {
+          success: false,
+          error: 'An account with this email already exists. Please sign in.',
+        };
+      }
+
+      // 2. Register via Supabase Auth
       const { data, error } = await supabase.auth.signUp({
         email: cleanEmail,
         password: passwordInput,
@@ -211,7 +227,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         setIsLoading(false);
-        return { success: false, error: error.message };
+        const isDuplicate = error.message?.toLowerCase().includes('already registered') ||
+          error.message?.toLowerCase().includes('already exists');
+        return {
+          success: false,
+          error: isDuplicate
+            ? 'An account with this email already exists. Please sign in.'
+            : (error.message || 'Registration failed.'),
+        };
       }
 
       if (data?.user) {
@@ -237,7 +260,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       setIsLoading(false);
-      return { success: true };
+      return { success: true, message: 'Account created successfully. You can now sign in.' };
     } catch (err: any) {
       setIsLoading(false);
       return { success: false, error: err.message || 'Registration failed.' };

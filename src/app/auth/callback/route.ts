@@ -52,23 +52,15 @@ export async function GET(request: NextRequest) {
         userEmail.split('@')[0] ||
         'User';
 
-      const isAdminEmail = userEmail.trim().toLowerCase() === 'adamsamr1127@gmail.com';
+      const cleanEmail = userEmail.trim().toLowerCase();
+      const isAdminEmail = cleanEmail === 'adamsamr1127@gmail.com';
 
-      // Check if user is already registered in profiles table
+      // Check if user or email is already registered in profiles table for account unification
       const { data: existingProfile } = await supabase
         .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .single();
-
-      // STRICT REGISTRATION GUARD:
-      // If an unregistered customer attempts to Sign In directly without registering first
-      if (!isAdminEmail && !existingProfile && mode === 'login') {
-        await supabase.auth.signOut();
-        const registerUrl = new URL('/register', currentOrigin);
-        registerUrl.searchParams.set('error', 'Account not found. You must Register (Sign Up) first before signing in!');
-        return NextResponse.redirect(registerUrl);
-      }
+        .select('id, role')
+        .or(`id.eq.${user.id},email.eq.${cleanEmail}`)
+        .maybeSingle();
 
       let role = isAdminEmail ? 'ADMIN' : (existingProfile?.role || 'CUSTOMER');
 
@@ -77,7 +69,7 @@ export async function GET(request: NextRequest) {
         [
           {
             id: user.id,
-            email: userEmail,
+            email: cleanEmail,
             full_name: userName,
             role,
           },

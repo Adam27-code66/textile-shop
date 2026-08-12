@@ -48,7 +48,7 @@ function RegisterFormContent() {
 
     const result = await register(fullName, email, password);
     if (result.success) {
-      setSuccessMessage('Account created successfully! Redirecting to shop catalog...');
+      setSuccessMessage(result.message || 'Account created successfully. You can now sign in.');
       setTimeout(() => {
         router.push('/shop');
       }, 1500);
