@@ -130,7 +130,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error || !data.user) {
         setIsLoading(false);
-        return { success: false, error: error?.message || 'Invalid email or password.' };
+        const isInvalidCreds = error?.message?.toLowerCase().includes('invalid login credentials');
+        const customError = isInvalidCreds
+          ? 'Account not found. If you have not created an account yet, please Sign Up first!'
+          : (error?.message || 'Invalid email or password.');
+        return { success: false, error: customError };
       }
 
       const profile = await buildUserProfile(data.user);
